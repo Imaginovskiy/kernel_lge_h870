@@ -16,10 +16,11 @@
 #include <linux/debugfs.h>
 #include <linux/types.h>
 #include <trace/events/power.h>
+#include <linux/moduleparam.h>
 
 #include "power.h"
 
-<<<<<<< HEAD
+
 #ifdef CONFIG_BOEFFLA_WL_BLOCKER
 #include "boeffla_wl_blocker.h"
 
@@ -30,23 +31,22 @@ bool wl_blocker_debug = false;
 static void wakeup_source_deactivate(struct wakeup_source *ws);
 #endif
 
-=======
 
-#ifdef CONFIG_BOEFFLA_WL_BLOCKER
-char list_wl[255] = {0};
-char list_wl_search[257] = {0};
-bool wl_blocker_active = false;
-bool wl_blocker_debug = false;
-
-static void wakeup_source_deactivate(struct wakeup_source *ws);
-#endif
-
-
->>>>>>> 49c71c4b78c... [pme] [FIX] boeffla_wl_blocker: add generic wakelock blocker driver v1.0.0
 /*
  * If set, the suspend/hibernate code will abort transitions to a sleep state
  * if wakeup events are registered during or immediately before the transition.
  */
+static bool enable_ipa_ws = false;
+module_param(enable_ipa_ws, bool, 0644);
+static bool enable_wlan_wake = false;
+module_param(enable_wlan_wake, bool, 0644);
+static bool enable_timerfd_ws = false;
+module_param(enable_timerfd_ws, bool, 0644);
+static bool enable_netlink_ws = false;
+module_param(enable_netlink_ws, bool, 0644);
+static bool enable_netmgr_wl_ws = false;
+module_param(enable_netmgr_wl_ws, bool, 0644);
+
 bool events_check_enabled __read_mostly;
 
 /* If set and the system is suspending, terminate the suspend. */
@@ -405,6 +405,73 @@ int device_set_wakeup_enable(struct device *dev, bool enable)
 }
 EXPORT_SYMBOL_GPL(device_set_wakeup_enable);
 
+#ifdef CONFIG_PM_AUTOSLEEP
+static void update_prevent_sleep_time(struct wakeup_source *ws, ktime_t now)
+{
+	ktime_t delta = ktime_sub(now, ws->start_prevent_time);
+	ws->prevent_sleep_time = ktime_add(ws->prevent_sleep_time, delta);
+}
+#else
+static inline void update_prevent_sleep_time(struct wakeup_source *ws,
+					     ktime_t now) {}
+#endif
+
+/**
+ * wakup_source_deactivate - Mark given wakeup source as inactive.
+ * @ws: Wakeup source to handle.
+ *
+ * Update the @ws' statistics and notify the PM core that the wakeup source has
+ * become inactive by decrementing the counter of wakeup events being processed
+ * and incrementing the counter of registered wakeup events.
+ */
+static void wakeup_source_deactivate(struct wakeup_source *ws)
+{
+	unsigned int cnt, inpr, cec;
+	ktime_t duration;
+	ktime_t now;
+
+	ws->relax_count++;
+	/*
+	 * __pm_relax() may be called directly or from a timer function.
+	 * If it is called directly right after the timer function has been
+	 * started, but before the timer function calls __pm_relax(), it is
+	 * possible that __pm_stay_awake() will be called in the meantime and
+	 * will set ws->active.  Then, ws->active may be cleared immediately
+	 * by the __pm_relax() called from the timer function, but in such a
+	 * case ws->relax_count will be different from ws->active_count.
+	 */
+	if (ws->relax_count != ws->active_count) {
+		ws->relax_count--;
+		return;
+	}
+
+	ws->active = false;
+
+	now = ktime_get();
+	duration = ktime_sub(now, ws->last_time);
+	ws->total_time = ktime_add(ws->total_time, duration);
+	if (ktime_to_ns(duration) > ktime_to_ns(ws->max_time))
+		ws->max_time = duration;
+
+	ws->last_time = now;
+	del_timer(&ws->timer);
+	ws->timer_expires = 0;
+
+	if (ws->autosleep_enabled)
+		update_prevent_sleep_time(ws, now);
+
+	/*
+	 * Increment the counter of registered wakeup events and decrement the
+	 * couter of wakeup events in progress simultaneously.
+	 */
+	cec = atomic_add_return(MAX_IN_PROGRESS, &combined_event_count);
+	trace_wakeup_source_deactivate(ws->name, cec);
+
+	split_counters(&cnt, &inpr);
+	if (!inpr && waitqueue_active(&wakeup_count_wait_queue))
+		wake_up(&wakeup_count_wait_queue);
+}
+
 /*
  * The functions below use the observation that each wakeup event starts a
  * period in which the system should not be suspended.  The moment this period
@@ -445,6 +512,21 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 {
 	unsigned int cec;
 
+	if ((!enable_ipa_ws && !strncmp(ws->name, "IPA_WS", 6)) ||		
+		(!enable_wlan_wake &&
+                        !strncmp(ws->name, "wlan_wake", 9)) ||
+		(!enable_timerfd_ws &&
+                        !strncmp(ws->name, "[timerfd]", 9)) ||
+		(!enable_netlink_ws &&
+                        !strncmp(ws->name, "NETLINK", 7)) ||
+		(!enable_netmgr_wl_ws &&
+                        !strncmp(ws->name, "netmgr_wl", 9))) {
+		if (ws->active)
+			wakeup_source_deactivate(ws);
+
+		return;
+}
+
 	/*
 	 * active wakeup source should bring the system
 	 * out of PM_SUSPEND_FREEZE state
@@ -467,16 +549,8 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 // AP: Function to check if a wakelock is on the wakelock blocker list
 static bool check_for_block(struct wakeup_source *ws)
 {
-<<<<<<< HEAD
-<<<<<<< HEAD
 	char wakelock_name[52] = {0};
 	int length;
-=======
-	char wakelock_name[52];
->>>>>>> 49c71c4b78c... [pme] [FIX] boeffla_wl_blocker: add generic wakelock blocker driver v1.0.0
-=======
-	char wakelock_name[52] = {0};
->>>>>>> a9f90f73689... boeffla_wl_blocker: update to wakelock blocker driver v1.0.1
 
 	// if debug mode on, print every wakelock requested
 	if (wl_blocker_debug)
@@ -486,8 +560,6 @@ static bool check_for_block(struct wakeup_source *ws)
 	if (!wl_blocker_active)
 		return false;
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 	// only if ws structure is valid
 	if (ws)
 	{
@@ -497,28 +569,10 @@ static bool check_for_block(struct wakeup_source *ws)
 			return false;
 
 		// check if wakelock is in wake lock list to be blocked
-=======
-	// check if wakelock is in wake lock list to be blocked
-=======
-	// only if ws structure is valid
->>>>>>> a9f90f73689... boeffla_wl_blocker: update to wakelock blocker driver v1.0.1
-	if (ws)
-	{
-		// wake lock names which are longer than 50 chars are not handled
-		if (strlen(ws->name) > 50)
-			return false;
-
-<<<<<<< HEAD
->>>>>>> 49c71c4b78c... [pme] [FIX] boeffla_wl_blocker: add generic wakelock blocker driver v1.0.0
-=======
-		// check if wakelock is in wake lock list to be blocked
->>>>>>> a9f90f73689... boeffla_wl_blocker: update to wakelock blocker driver v1.0.1
 		sprintf(wakelock_name, ";%s;", ws->name);
 
 		if(strstr(list_wl_search, wakelock_name) == NULL)
 			return false;
-<<<<<<< HEAD
-<<<<<<< HEAD
 
 		// wake lock is in list, print it if debug mode on
 		if (wl_blocker_debug)
@@ -539,36 +593,6 @@ static bool check_for_block(struct wakeup_source *ws)
 
 	// there was no valid ws structure, do not block by default
 	return false;
-=======
-	}
-=======
->>>>>>> a9f90f73689... boeffla_wl_blocker: update to wakelock blocker driver v1.0.1
-
-		// wake lock is in list, print it if debug mode on
-		if (wl_blocker_debug)
-			printk("Boeffla WL blocker: %s blocked\n", ws->name);
-
-		// if it is currently active, deactivate it immediately + log in debug mode
-		if (ws->active)
-		{
-			wakeup_source_deactivate(ws);
-
-			if (wl_blocker_debug)
-				printk("Boeffla WL blocker: %s killed\n", ws->name);
-		}
-
-		// finally block it
-		return true;
-	}
-
-<<<<<<< HEAD
-	// finally block it
-	return true;
->>>>>>> 49c71c4b78c... [pme] [FIX] boeffla_wl_blocker: add generic wakelock blocker driver v1.0.0
-=======
-	// there was no valid ws structure, do not block by default
-	return false;
->>>>>>> a9f90f73689... boeffla_wl_blocker: update to wakelock blocker driver v1.0.1
 }
 #endif
 
@@ -641,82 +665,6 @@ void pm_stay_awake(struct device *dev)
 }
 EXPORT_SYMBOL_GPL(pm_stay_awake);
 
-#ifdef CONFIG_PM_AUTOSLEEP
-static void update_prevent_sleep_time(struct wakeup_source *ws, ktime_t now)
-{
-	ktime_t delta = ktime_sub(now, ws->start_prevent_time);
-	ws->prevent_sleep_time = ktime_add(ws->prevent_sleep_time, delta);
-}
-#else
-static inline void update_prevent_sleep_time(struct wakeup_source *ws,
-					     ktime_t now) {}
-#endif
-
-/**
- * wakup_source_deactivate - Mark given wakeup source as inactive.
- * @ws: Wakeup source to handle.
- *
- * Update the @ws' statistics and notify the PM core that the wakeup source has
- * become inactive by decrementing the counter of wakeup events being processed
- * and incrementing the counter of registered wakeup events.
- */
-static void wakeup_source_deactivate(struct wakeup_source *ws)
-{
-	unsigned int cnt, inpr, cec;
-	ktime_t duration;
-	ktime_t now;
-
-	ws->relax_count++;
-	/*
-	 * __pm_relax() may be called directly or from a timer function.
-	 * If it is called directly right after the timer function has been
-	 * started, but before the timer function calls __pm_relax(), it is
-	 * possible that __pm_stay_awake() will be called in the meantime and
-	 * will set ws->active.  Then, ws->active may be cleared immediately
-	 * by the __pm_relax() called from the timer function, but in such a
-	 * case ws->relax_count will be different from ws->active_count.
-	 */
-	if (ws->relax_count != ws->active_count) {
-		ws->relax_count--;
-		return;
-	}
-
-	ws->active = false;
-
-	now = ktime_get();
-	duration = ktime_sub(now, ws->last_time);
-	ws->total_time = ktime_add(ws->total_time, duration);
-	if (ktime_to_ns(duration) > ktime_to_ns(ws->max_time))
-		ws->max_time = duration;
-
-	ws->last_time = now;
-	del_timer(&ws->timer);
-	ws->timer_expires = 0;
-
-	if (ws->autosleep_enabled)
-		update_prevent_sleep_time(ws, now);
-
-	/*
-	 * Increment the counter of registered wakeup events and decrement the
-	 * couter of wakeup events in progress simultaneously.
-	 */
-	cec = atomic_add_return(MAX_IN_PROGRESS, &combined_event_count);
-	trace_wakeup_source_deactivate(ws->name, cec);
-
-	split_counters(&cnt, &inpr);
-	if (!inpr && waitqueue_active(&wakeup_count_wait_queue))
-		wake_up(&wakeup_count_wait_queue);
-}
-
-/**
- * __pm_relax - Notify the PM core that processing of a wakeup event has ended.
- * @ws: Wakeup source object associated with the source of the event.
- *
- * Call this function for wakeup events whose processing started with calling
- * __pm_stay_awake().
- *
- * It is safe to call it from interrupt context.
- */
 void __pm_relax(struct wakeup_source *ws)
 {
 	unsigned long flags;
