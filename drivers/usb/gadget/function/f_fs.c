@@ -807,6 +807,12 @@ retry:
 		}
 
 		spin_unlock_irq(&epfile->ffs->eps_lock);
+		spin_unlock_irq(&epfile->ffs->eps_lock);
+			ret = -ENODEV;
+			goto error;
+		}
+
+		spin_unlock_irq(&epfile->ffs->eps_lock);
 #endif
 
 		if (!io_data->read)
