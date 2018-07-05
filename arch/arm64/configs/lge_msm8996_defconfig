@@ -86,6 +86,9 @@ CONFIG_QPNP_HAPTIC=y
 # WireGuard
 CONFIG_WIREGUARD=y
 
+# Vibrator
+CONFIG_QPNP_HAPTIC=y
+
 # Disable QCOM drivers to avoid confliction
 CONFIG_BT_RFCOMM=n
 CONFIG_MSM_BT_POWER=n
