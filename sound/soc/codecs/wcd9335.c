@@ -6070,7 +6070,7 @@ static int tasha_codec_enable_dec(struct snd_soc_dapm_widget *w,
 				      msecs_to_jiffies(tx_unmute_delay));
 		if (tasha->tx_hpf_work[decimator].hpf_cut_off_freq !=
 							CF_MIN_3DB_150HZ)
-			queue_delayed_work(system_power_efficient_wq,
+			schedule_delayed_work(
 					&tasha->tx_hpf_work[decimator].dwork,
 					msecs_to_jiffies(300));
 		/* apply gain after decimator is enabled */
@@ -14046,66 +14046,6 @@ static struct regulator *tasha_codec_find_ondemand_regulator(
 	return NULL;
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-void update_headphones_volume_boost(unsigned int vol_boost)
-{
-	int default_val = soundcontrol.default_headphones_value;
-	int boosted_val = default_val + vol_boost;
-	
-	snd_soc_write(soundcontrol.snd_control_codec,
- 		WCD9335_CDC_RX1_RX_VOL_CTL, boosted_val);
- 	snd_soc_write(soundcontrol.snd_control_codec,
- 		WCD9335_CDC_RX1_RX_VOL_MIX_CTL, boosted_val);
- 	snd_soc_write(soundcontrol.snd_control_codec,
- 		WCD9335_CDC_RX2_RX_VOL_CTL, boosted_val);
- 	snd_soc_write(soundcontrol.snd_control_codec,
- 		WCD9335_CDC_RX2_RX_VOL_MIX_CTL, boosted_val);
- 		
- 		pr_info("Sound Control: Boosted Headphones RX1 value %d\n",
- 		snd_soc_read(soundcontrol.snd_control_codec,
- 		WCD9335_CDC_RX1_RX_VOL_CTL));
- 
- 		pr_info("Sound Control: Boosted Headphones RX2 value %d\n",
-		snd_soc_read(soundcontrol.snd_control_codec,
- 		WCD9335_CDC_RX2_RX_VOL_CTL));
- 	
-}
-
-void update_speaker_gain(int vol_boost)
-{
-	int default_val = soundcontrol.default_speaker_value;
-	int boosted_val = default_val + vol_boost;
-	
-	pr_info("Sound Control: Speaker default value %d\n", default_val);
-	
-	snd_soc_write(soundcontrol.snd_control_codec,
- 		WCD9335_CDC_RX6_RX_VOL_CTL, boosted_val);
- 	snd_soc_write(soundcontrol.snd_control_codec,
- 		WCD9335_CDC_RX6_RX_VOL_MIX_CTL, boosted_val);
- 		 
- 	pr_info("Sound Control: Boosted Speaker RX6 value %d\n",
- 		snd_soc_read(soundcontrol.snd_control_codec,
- 		WCD9335_CDC_RX6_RX_VOL_CTL));
-}
-
-void update_mic_gain(int vol_boost)
-{
-	int default_val = soundcontrol.default_mic_value;
-	int boosted_val = default_val + vol_boost;
-	
-	pr_info("Sound Control: Speaker default value %d\n", default_val);
-	
-	snd_soc_write(soundcontrol.snd_control_codec,
- 		WCD9335_CDC_RX0_RX_VOL_CTL, boosted_val);
- 	snd_soc_write(soundcontrol.snd_control_codec,
- 		WCD9335_CDC_RX0_RX_VOL_MIX_CTL, boosted_val);
- 		 
- 	pr_info("Sound Control: Boosted Speaker RX6 value %d\n",
- 		snd_soc_read(soundcontrol.snd_control_codec,
- 		WCD9335_CDC_RX0_RX_VOL_CTL));
-=======
 #ifdef CONFIG_SOUND_CONTROL
 unsigned int sound_control_write(unsigned int reg, int val)
 {
@@ -14341,22 +14281,7 @@ static int tasha_codec_probe(struct snd_soc_codec *codec)
 	snd_soc_dapm_disable_pin(dapm, "ANC EAR");
 	mutex_unlock(&codec->mutex);
 	snd_soc_dapm_sync(dapm);
-<<<<<<< HEAD
-<<<<<<< HEAD
 
-=======
-	
-	
-	/*
- 	 * Get the default values during probe
- 	 */
- 	soundcontrol.default_headphones_value = snd_soc_read(codec,
- 		WCD9335_CDC_RX1_RX_VOL_CTL);
- 	soundcontrol.default_speaker_value = snd_soc_read(codec,
- 		WCD9335_CDC_RX6_RX_VOL_CTL);
- 	soundcontrol.default_mic_value = snd_soc_read(codec,
- 		WCD9335_CDC_RX0_RX_VOL_CTL);
- 		
 #ifdef CONFIG_SND_SOC_ES9218P
 		if (enable_es9218p)
 			pr_info("%s: Enable enable_es9218p\n", __func__);
